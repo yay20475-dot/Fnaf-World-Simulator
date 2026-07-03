@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Fnaf World Simulator</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+        body { background-color: #000; font-family: 'Courier New', Courier, monospace; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+        
+        #game-container {
+            width: 100vw; height: 100vh; max-width: 450px; max-height: 850px;
+            background-color: #111; position: relative; border: 4px solid #333; border-radius: 12px;
+            display: flex; flex-direction: column; overflow: hidden;
+        }
+
+        /* OVERWORLD MAP SCREEN */
+        #map-screen { display: flex; flex-direction: column; width: 100%; height: 100%; }
+        #map-header { background: rgba(0,0,0,0.8); padding: 10px; display: flex; justify-content: space-between; align-items: center; color: #55ff55; font-weight: bold; border-bottom: 2px solid #333; }
+        #party-toggle-btn { background: #333; border: 1px solid #55ff55; color: #55ff55; padding: 4px 10px; font-weight: bold; border-radius: 4px; font-family: inherit; font-size: 12px; }
+        
+        #map-viewport { flex: 1; position: relative; background-color: #1b5e20; overflow: hidden; border-bottom: 3px solid #222; }
+        #map-grid { position: absolute; display: grid; grid-template-columns: repeat(15, 40px); grid-template-rows: repeat(15, 40px); transition: all 0.15s ease; }
+        
+        .tile { width: 40px; height: 40px; border: 1px solid rgba(0,0,0,0.03); display: flex; justify-content: center; align-items: center; }
+        .tile.tree { background-color: #0d3c12; position: relative; }
+        .tile.tree::after { content: "🌲"; font-size: 20px; }
+        
+        #player-token {
+            width: 32px; height: 32px; background-color: #8b5a2b; border: 2px solid #fff;
+            border-radius: 50%; position: absolute; display: flex; justify-content: center;
+            align-items: center; font-size: 18px; font-weight: bold; box-shadow: 0 0 10px #fff;
+            transition: left 0.1s ease, top 0.1s ease; z-index: 5;
+        }
+
+        /* D-PAD */
+        #dpad-container { background: #000; height: 140px; display: flex; justify-content: center; align-items: center; position: relative; flex-shrink: 0; }
+        .dpad-btn { position: absolute; width: 46px; height: 46px; background: #222; border: 2px solid #555; color: white; font-weight: bold; font-size: 18px; border-radius: 8px; }
+        .dpad-btn:active { background: #444; border-color: #888; }
+        #btn-up { top: 6px; left: calc(50% - 23px); }
+        #btn-down { bottom: 6px; left: calc(50% - 23px); }
+        #btn-left { top: 47px; left: calc(50% - 75px); }
+        #btn-right { top: 47px; left: calc(50% - -29px); }
+
+        /* BATTLE SCREEN */
+        #battle-screen { display: none; flex-direction: column; width: 100%; height: 100%; }
+        #battle-header { background: rgba(0,0,0,0.8); padding: 10px; text-align: center; color: #ff3333; font-weight: bold; font-size: 14px; border-bottom: 2px solid #333; flex-shrink: 0; }
+        
+        #battlefield { flex: 1; position: relative; background: radial-gradient(circle, #2e7d32 20%, #0d260d 90%); display: flex; justify-content: space-between; padding: 15px 10px; align-items: center; overflow: hidden; }
+        #enemy-side { display: flex; flex-direction: column; align-items: center; width: 40%; }
+        #party-side { display: flex; flex-direction: column; gap: 10px; width: 45%; max-height: 100%; overflow-y: auto; }
+        
+        .sprite { width: 64px; height: 64px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-weight: bold; font-size: 11px; box-shadow: 0 4px 8px rgba(0,0,0,0.5); position: relative; border: 3px solid #fff; text-shadow: 1px 1px 2px black; text-align: center; flex-shrink: 0; }
+        .enemy { width: 85px; height: 85px; background-color: #7f0000; border-color: #ff3333; color: #ff9999; font-size: 12px; }
+        .enemy.boss-style { background-color: #4a0072 !important; border-color: #ba68c8 !important; color: #e1bee7 !important; }
+        .enemy.challenger-style { background-color: #0d47a1 !important; border-color: #2196f3 !important; color: #bbdefb !important; }
+        
+        .freddy { background-color: #8b5a2b; }
+        .bonnie { background-color: #5c5cd6; }
+        .chica { background-color: #e6b800; color: #000; text-shadow: none; }
+        .unlocked-hero { background-color: #37474f; color: #fff; }
+        
+        .active-turn { border-color: #55ff55 !important; box-shadow: 0 0 12px #55ff55; transform: scale(1.04); }
+        
+        .hp-container { width: 100%; font-size: 10px; text-align: center; margin-top: 2px; }
+        .hp-bar-outer { width: 100%; background: #444; height: 5px; border-radius: 3px; overflow: hidden; margin-top: 2px; }
+        .hp-bar-inner { height: 100%; background: #00ff00; width: 100%; transition: width 0.15s ease; }
+        .enemy .hp-bar-inner { background: #ff0000; }
+
+        /* SKILL BUTTONS - FIXED GRID SYSTEM TO PREVENT OVERFLOW/SINKING */
+        #control-panel { background-color: #000; padding: 10px; height: 195px; flex-shrink: 0; border-top: 3px solid #222; display: flex; flex-direction: column; gap: 5px; }
+        #skills-list-container { display: flex; flex-direction: column; gap: 6px; flex: 1; justify-content: center; }
+        .skill-btn { background: #151515; color: #fff; border: 2px solid #444; padding: 8px 12px; border-radius: 6px; font-weight: bold; font-size: 12px; text-align: left; display: flex; justify-content: space-between; align-items: center; height: 42px; font-family: inherit; }
+        .skill-btn:active { background: #252525; }
+        .skill-btn:disabled { opacity: 0.2; }
+        
+        .move-orange { border-left: 6px solid #ff9705; } 
+        .move-red { border-left: 6px solid #ff2222; }    
+        .move-pink { border-left: 6px solid #ff66cc; }   
+
+        /* POPUP TEXT FX */
+        .pop-text { position: absolute; font-size: 22px; font-weight: bold; text-shadow: 2px 2px 0 #000; animation: floatUp 0.5s ease-out forwards; pointer-events: none; z-index: 20; }
+        @keyframes floatUp { 0% { opacity: 1; transform: translateY(0) scale(1); } 100% { opacity: 0; transform: translateY(-45px) scale(1.1); } }
+
+        /* OVERLAYS & PANEL CLOSES */
+        #overlay { display: none; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.94); justify-content: center; align-items: center; flex-direction: column; z-index: 100; text-align: center; padding: 20px; }
+        #overlay h1 { font-size: 28px; margin-bottom: 20px; font-weight: bold; }
+        #overlay p { font-size: 13px; color: #aaa; margin-bottom: 20px; max-width: 300px; }
+        #overlay button { padding: 10px 24px; background: #1b5e20; border: 2px solid #55ff55; color: white; font-weight: bold; border-radius: 6px; font-size: 15px; font-family: inherit; }
+        
+        /* PARTY MANAGEMENT MENU */
+        #party-menu { display: none; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(5,5,5,0.96); z-index: 90; flex-direction: column; padding: 20px; }
+        #party-menu h2 { font-size: 20px; color: #55ff55; text-align: center; margin-bottom: 5px; text-shadow: 0 0 5px #000; }
+        #party-menu .limit-warning { font-size: 11px; color: #ff5555; text-align: center; margin-bottom: 15px; }
+        #roster-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px; padding-right: 5px; }
+        .roster-item { background: #151515; border: 2px solid #333; padding: 10px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
+        .roster-item.selected { border-color: #55ff55; background: #0a1f0a; }
+        .roster-info { display: flex; flex-direction: column; gap: 2px; }
+        .roster-name { font-weight: bold; font-size: 14px; }
+        .roster-status { font-size: 11px; color: #888; }
+        .roster-checkbox { width: 22px; height: 22px; accent-color: #55ff55; cursor: pointer; }
+        #party-close-btn { width: 100%; padding: 12px; background: #222; border: 2px solid #555; color: white; font-weight: bold; font-radius: 6px; font-size: 15px; font-family: inherit; border-radius: 6px; }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <!-- SCREEN 1: EXPLORATION MAP -->
+        <div id="map-screen">
+            <div id="map-header">
+                <span>FAZBEAR HILLS</span>
+                <button id="party-toggle-btn" onclick="openPartyMenu()">PARTY</button>
+            </div>
+            <div id="map-viewport">
+                <div id="map-grid"></div>
+                <div id="player-token">🐻</div>
+            </div>
+            <div id="dpad-container">
+                <button class="dpad-btn" id="btn-up" onclick="movePlayer(0, -1)">▲</button>
+                <button class="dpad-btn" id="btn-left" onclick="movePlayer(-1, 0)">◀</button>
+                <button class="dpad-btn" id="btn-right" onclick="movePlayer(1, 0)">▶</button>
+                <button class="dpad-btn" id="btn-down" onclick="movePlayer(0, 1)">▼</button>
+            </div>
+        </div>
+
+        <!-- SCREEN 2: BATTLE SCREEN -->
+        <div id="battle-screen">
+            <div id="battle-header">BATTLE START!</div>
+            <div id="battlefield">
+                <!-- Enemy Side -->
+                <div id="enemy-side">
+                    <div class="sprite enemy" id="enemy-sprite">Enemy</div>
+                    <div class="hp-container">
+                        HP: <span id="enemy-hp-txt">0</span>/<span id="enemy-maxhp-txt">0</span>
+                        <div class="hp-bar-outer"><div class="hp-bar-inner" id="enemy-hp-bar"></div></div>
+                    </div>
+                </div>
+                <!-- Player Party Side -->
+                <div id="party-side">
+                    <!-- Dynamic Party Members will render here -->
+                </div>
+            </div>
+            <!-- Action Panel -->
+            <div id="control-panel">
+                <div style="font-size: 13px; color: #888; margin-bottom:2px;">TURN: <span id="turn-name" style="color:#55ff55;">Freddy</span></div>
+                <div id="skills-list-container"></div>
+            </div>
+        </div>
+
+        <!-- OVERLAY SYSTEM (Victory, Game Over, Challenger, Party Setup) -->
+        <div id="overlay">
+            <h1 id="overlay-title">PARTY SELECTION</h1>
+            <p id="overlay-desc">Select 1 to 3 characters for your active team.</p>
+            <div id="party-selection-grid"></div>
+            <button id="overlay-btn" onclick="handleOverlayClick()">CONFIRM</button>
+        </div>
+    </div>
+
+    <script>
+
+function saveUnlockedCharacters() {
+    const unlocked = allCharacters
+        .filter(c => c.unlocked)
+        .map(c => c.id);
+
+    localStorage.setItem(
+        "unlockedCharacters",
+        JSON.stringify(unlocked)
+    );
+}
+
+function loadUnlockedCharacters() {
+    const data = JSON.parse(
+        localStorage.getItem("unlockedCharacters") || "[]"
+    );
+
+    data.forEach(id => {
+        let c = allCharacters.find(x => x.id === id);
+        if (c) c.unlocked = true;
+
+        let ch = challengerPool.find(x => x.id === id);
+        if (ch && !allCharacters.find(x => x.id === id)) {
+            ch.unlocked = true;
+
+            let clone = JSON.parse(JSON.stringify(ch));
+            clone.unlocked = true;
+            allCharacters.push(clone);
+        }
+    });
+}
+
+        // --- MAP GENERATION & MANAGEMENT ---
+        const MAP_SIZE = 15;
+        const TILE_SIZE = 40;
+        let playerPos = { x: 2, y: 2 };
+        let mapData = [];
+
+        function initMap() {
+            const gridEl = document.getElementById('map-grid');
+            gridEl.innerHTML = '';
+            mapData = [];
+
+            for (let y = 0; y < MAP_SIZE; y++) {
+                mapData[y] = [];
+                for (let x = 0; x < MAP_SIZE; x++) {
+                    let isTree = Math.random() < 0.16 && !(x === 2 && y === 2);
+                    mapData[y][x] = isTree ? 'tree' : 'walkable';
+
+                    let tile = document.createElement('div');
+                    tile.className = isTree ? 'tile tree' : 'tile';
+                    gridEl.appendChild(tile);
+                }
+            }
+            renderPlayer();
+        }
+
+        function renderPlayer() {
+            const token = document.getElementById('player-token');
+            const gridEl = document.getElementById('map-grid');
+            
+            token.style.left = (playerPos.x * TILE_SIZE + 4) + 'px';
+            token.style.top = (playerPos.y * TILE_SIZE + 4) + 'px';
+
+            let offsetX = 180 - (playerPos.x * TILE_SIZE);
+            let offsetY = 180 - (playerPos.y * TILE_SIZE);
+            gridEl.style.left = offsetX + 'px';
+            gridEl.style.top = offsetY + 'px';
+        }
+
+        function movePlayer(dx, dy) {
+            let newX = playerPos.x + dx;
+            let newY = playerPos.y + dy;
+
+            if (newX >= 0 && newX < MAP_SIZE && newY >= 0 && newY < MAP_SIZE) {
+                if (mapData[newY][newX] !== 'tree') {
+                    playerPos.x = newX;
+                    playerPos.y = newY;
+                    renderPlayer();
+                    
+                    // Random Encounter Trigger Rate (22%)
+                    if (Math.random() < 0.22) { 
+                        setTimeout(triggerEncounter, 150);
+                    }
+                }
+            }
+        }
+
+        // --- GAMEPLAY CONFIGURATION DATA ---
+        let enemyDatabase = [
+            { name: "Bouncepot", hp: 180, maxHp: 180, type: "normal" },
+            { name: "Gearrat", hp: 220, maxHp: 220, type: "normal" },
+            { name: "Mechrab", hp: 250, maxHp: 250, type: "normal" },
+            { name: "Auto-Chipper", hp: 600, maxHp: 600, type: "boss" }
+        ];
+
+        let challengerPool = [
+            { id: "p_freddy", name: "P.Freddy", hp: 155, maxHp: 155, unlocked: false,
+              moves: [
+                  { name: "Gloom Song", type: "orange", desc: "Lowers enemy attack damage power" },
+                  { name: "Sludge", type: "red", desc: "Deals heavy damage and slows enemy" },
+{ name: "Rainy Day", type: "red", desc: "Heavy rain damages all enemies" }
+              ]
+            },
+            { id: "p_chica", name: "P.Chica", hp: 160, maxHp: 160, unlocked: false,
+              moves: [
+                  { name: "Toxic Bite", type: "orange", desc: "Lowers enemy attack damage power" },
+                  { name: "Sludge", type: "red", desc: "bite enemy and inflicted toxic" },
+{ name: "Unscrew", type: "orange", desc: "Chance to defeat single enemies instantly" }
+              ]
+            },
+            { id: "w_bonnie", name: "W.Bonnie", hp: 180, maxHp: 180, unlocked: false,
+              moves: [
+                  { name: "Eye Beam", type: "orange", desc: "Heavy piercing laser" },
+                  { name: "Pizza Wheel", type: "red", desc: "Devastating multi-hit AoE" },
+                  { name: "Unscrew 2", type: "orange", desc: "High chance to defeat single enemies instantly" }
+              ]
+            },
+            { id: "marionette", name: "Marionette", hp: 205, maxHp: 205, unlocked: false,
+              moves: [
+                  { name: "Prize Ball", type: "orange", desc: "Triggers a random heavy move" },
+                  { name: "Mystery Box", type: "red", desc: "Swaps all current move targets" },
+                  { name: "Esc Key", type: "red", desc: "Chance to defeat all enemies instantly" }
+              ]
+            },
+            { id: "paperpals", name: "Paperpals", hp: 220, maxHp: 220, unlocked: false,
+              moves: [
+                  { name: "Prize Ball 2", type: "orange", desc: "Triggers mega random high tier move" },
+                  { name: "Mystery Box 2", type: "red", desc: "Randomly swaps current combatants" },
+                  { name: "Mimic Ball", type: "pink", desc: "Duplicates the last move performed" }
+              ]
+            }
+        ];
+
+        // Roster Database
+        let allCharacters = [
+            { id: "freddy", name: "Freddy", hp: 105, maxHp: 105, unlocked: true, styleClass: "freddy",
+              moves: [
+                  { name: "Mic Toss", type: "orange", desc: "High single target damage" },
+                  { name: "Pizza Wheel", type: "red", desc: "Throws bouncing pizzas at enemy" },
+                  { name: "Birthday", type: "pink", desc: "Party stats temporary boost" }
+              ] 
+            },
+            { id: "bonnie", name: "Bonnie", hp: 110, maxHp: 110, unlocked: true, styleClass: "bonnie",
+              moves: [
+                  { name: "Bite", type: "orange", desc: "Quick single target physical bite" },
+                  { name: "Bashjam", type: "red", desc: "Heavy damage soundwave wave" },
+                  { name: "Happy Jam", type: "pink", desc: "Regenerate party health instantly" }
+              ] 
+            },
+            { id: "chica", name: "Chica", hp: 115, maxHp: 115, unlocked: true, styleClass: "chica",
+              moves: [
+                  { name: "Cupcake", type: "pink", desc: "Heals your whole combat party" },
+                  { name: "Party Favors", type: "pink", desc: "Deals damage AND heals the party" },
+                  { name: "Regen Song", type: "pink", desc: "Restores massive party health" }
+              ] 
+            }
+        ];
+
+loadUnlockedCharacters();
+
+        let activePartyIds = ["freddy", "bonnie", "chica"];
+        let combatParty = [];
+        let currentEnemy = {};
+        let isChallengerBattleActive = false;
+        let selectedChallengerTemplate = null;
+
+        let currentTurnIndex = 0;
+        let overlayMode = "PARTY_SETUP"; // "WIN", "GAME_OVER", "CHALLENGER_APPEAR", "CHALLENGER_WIN", "PARTY_SETUP"
+
+        // --- BATTLE CONTROL LOGIC ---
+        function triggerEncounter() {
+            isChallengerBattleActive = false;
+            if (Math.random() < 0.15) {
+                currentEnemy = JSON.parse(JSON.stringify(enemyDatabase.find(e => e.type === "boss")));
+            } else {
+                let normals = enemyDatabase.filter(e => e.type === "normal");
+                currentEnemy = JSON.parse(JSON.stringify(normals[Math.floor(Math.random() * normals.length)]));
+            }
+            setupBattleEnvironment();
+        }
+
+        function triggerChallengerBattle() {
+            isChallengerBattleActive = true;
+            currentEnemy = { name: selectedChallengerTemplate.name, hp: 400, maxHp: 400, type: "challenger" };
+            setupBattleEnvironment();
+        }
+
+        function setupBattleEnvironment() {
+            document.getElementById('map-screen').style.display = 'none';
+            document.getElementById('battle-screen').style.display = 'flex';
+            
+            let enemySprite = document.getElementById('enemy-sprite');
+            enemySprite.innerText = currentEnemy.name;
+            enemySprite.classList.remove('boss-style', 'challenger-style');
+            
+            if (currentEnemy.type === "boss") {
+                document.getElementById('battle-header').innerText = `BOSS ENCOUNTER: ${currentEnemy.name.toUpperCase()}!`;
+                enemySprite.classList.add('boss-style');
+            } else if (currentEnemy.type === "challenger") {
+                document.getElementById('battle-header').innerText = `A NEW CHALLENGER: ${currentEnemy.name.toUpperCase()}!`;
+                enemySprite.classList.add('challenger-style');
+            } else {
+                document.getElementById('battle-header').innerText = `WILD ENEMY: ${currentEnemy.name.toUpperCase()}`;
+            }
+
+            document.getElementById('enemy-maxhp-txt').innerText = currentEnemy.maxHp;
+            
+            // Build current combat group dynamically
+            combatParty = allCharacters.filter(c => activePartyIds.includes(c.id)).map(c => JSON.parse(JSON.stringify(c)));
+            
+            // Render specific party nodes layout
+            const side = document.getElementById('party-side');
+            side.innerHTML = '';
+            combatParty.forEach(p => {
+                let box = document.createElement('div');
+                box.id = `box-${p.id}`;
+                box.innerHTML = `
+                    <div class="sprite ${p.styleClass || 'unlocked-hero'}" id="char-${p.id}">${p.name}</div>
+                    <div class="hp-container">HP: <span id="hp-txt-${p.id}">${p.hp}</span><div class="hp-bar-outer"><div class="hp-bar-inner" id="hp-bar-${p.id}"></div></div></div>
+                `;
+                side.appendChild(box);
+            });
+
+            updateBattleUI();
+            currentTurnIndex = 0;
+            nextTurn();
+        }
+
+        function updateBattleUI() {
+            document.getElementById('enemy-hp-txt').innerText = currentEnemy.hp;
+            document.getElementById('enemy-hp-bar').style.width = (currentEnemy.hp / currentEnemy.maxHp * 100) + '%';
+
+            combatParty.forEach(p => {
+                document.getElementById(`hp-txt-${p.id}`).innerText = p.hp;
+                document.getElementById(`hp-bar-${p.id}`).style.width = (p.hp / p.maxHp * 100) + '%';
+            });
+        }
+
+        function nextTurn() {
+            combatParty.forEach(p => document.getElementById(`char-${p.id}`).classList.remove('active-turn'));
+
+            if (currentEnemy.hp <= 0) { handleBattleVictory(); return; }
+            if (combatParty.every(p => p.hp <= 0)) { showEndOverlay("GAME_OVER"); return; }
+
+            let loopGuard = 0;
+            while (combatParty[currentTurnIndex].hp <= 0 && loopGuard < combatParty.length) {
+                currentTurnIndex = (currentTurnIndex + 1) % combatParty.length;
+                loopGuard++;
+            }
+
+            let activeHero = combatParty[currentTurnIndex];
+            document.getElementById(`char-${activeHero.id}`).classList.add('active-turn');
+            document.getElementById('turn-name').innerText = activeHero.name;
+
+            const container = document.getElementById('skills-list-container');
+            container.innerHTML = '';
+            
+            activeHero.moves.forEach(move => {
+                let btn = document.createElement('button');
+                btn.className = `skill-btn move-${move.type}`;
+                btn.innerHTML = `<span>${move.name}</span><span style="font-size:11px; color:#aaa;">${move.desc}</span>`;
+                btn.onclick = () => executeMoveAction(move);
+                container.appendChild(btn);
+            });
+        }
+
+        function executeMoveAction(move) {
+            document.getElementById('skills-list-container').innerHTML = '';
+            let val = 0;
+
+if(move.name==="Mystery Box"){
+
+    mysteryBox(1);
+
+    updateBattleUI();
+
+    setTimeout(()=>{
+        processEnemyTurnAI();
+    },600);
+
+    return;
+}
+
+if(move.name==="Mystery Box 2"){
+
+    mysteryBox(2);
+
+    updateBattleUI();
+
+    setTimeout(()=>{
+        processEnemyTurnAI();
+    },600);
+
+    return;
+}
+
+// Unscrew / Esc Key: có tỉ lệ instakill
+if(move.name==="Unscrew"){
+
+    if(Math.random()<0.30){
+        currentEnemy.hp=0;
+        createPopUpFX(
+            document.getElementById("enemy-sprite"),
+            "UNSCREW!",
+            "#ffff00"
+        );
+    }else{
+        val=Math.floor(Math.random()*31)+40;
+        currentEnemy.hp=Math.max(0,currentEnemy.hp-val);
+        createPopUpFX(
+            document.getElementById("enemy-sprite"),
+            "-"+val,
+            "#ff2222"
+        );
+    }
+
+    updateBattleUI();
+
+    setTimeout(()=>{
+        if(currentEnemy.hp>0){
+            processEnemyTurnAI();
+        }else{
+            nextTurn();
+        }
+    },600);
+
+    return;
+}
+
+if(move.name==="Unscrew 2"){
+
+    if(Math.random()<0.50){ // 50%
+        currentEnemy.hp=0;
+        createPopUpFX(
+            document.getElementById("enemy-sprite"),
+            "UNSCREW 2!",
+            "#ffff00"
+        );
+    }else{
+        val=Math.floor(Math.random()*31)+40;
+        currentEnemy.hp=Math.max(0,currentEnemy.hp-val);
+        createPopUpFX(
+            document.getElementById("enemy-sprite"),
+            "-"+val,
+            "#ff2222"
+        );
+    }
+
+    updateBattleUI();
+
+    setTimeout(()=>{
+        if(currentEnemy.hp>0){
+            processEnemyTurnAI();
+        }else{
+            nextTurn();
+        }
+    },600);
+
+    return;
+}
+
+if(move.name==="Esc Key"){
+
+    if(Math.random()<0.40){ //40%
+        currentEnemy.hp=0;
+        createPopUpFX(
+            document.getElementById("enemy-sprite"),
+            "ESC!",
+            "#00ffff"
+        );
+    }else{
+        val=Math.floor(Math.random()*31)+40;
+        currentEnemy.hp=Math.max(0,currentEnemy.hp-val);
+        createPopUpFX(
+            document.getElementById("enemy-sprite"),
+            "-"+val,
+            "#ff2222"
+        );
+    }
+
+    updateBattleUI();
+
+    setTimeout(()=>{
+        if(currentEnemy.hp>0){
+            processEnemyTurnAI();
+        }else{
+            nextTurn();
+        }
+    },600);
+
+    return;
+}
+
+            if (move.name === "Party Favors") {
+                // Fixed Party Favors Logic: Deals splash damage AND triggers burst heal
+                val = Math.floor(Math.random() * 15) + 15; // 15-30 splash dmg
+                currentEnemy.hp = Math.max(0, currentEnemy.hp - val);
+                createPopUpFX(document.getElementById('enemy-sprite'), `-${val}`, '#ff66cc');
+
+                combatParty.forEach(p => {
+                    if (p.hp > 0) {
+                        let healAmount = Math.floor(Math.random() * 10) + 15; // 15-25 small team heal
+                        p.hp = Math.min(p.maxHp, p.hp + healAmount);
+                        createPopUpFX(document.getElementById(`char-${p.id}`), `+${healAmount}`, '#ff66cc');
+                    }
+                });
+            } 
+else if(move.type==="orange"){
+
+    val=Math.floor(Math.random()*21)+30;
+
+    // Eye Beam: 10% gây thêm 1000 damage
+    if(move.name==="Eye Beam" && Math.random()<0.10){
+        val+=1000;
+        createPopUpFX(
+            document.getElementById("enemy-sprite"),
+            "CRITICAL!",
+            "#ffff00"
+        );
+    }
+
+    currentEnemy.hp=Math.max(0,currentEnemy.hp-val);
+
+    createPopUpFX(
+        document.getElementById("enemy-sprite"),
+        "-"+val,
+        "#ff9705"
+    );
+}
+            else if (move.type === 'red') {
+                val = Math.floor(Math.random() * 31) + 40;
+                currentEnemy.hp = Math.max(0, currentEnemy.hp - val);
+                createPopUpFX(document.getElementById('enemy-sprite'), `-${val}`, '#ff2222');
+            } 
+            else if (move.type === 'pink') {
+                combatParty.forEach(p => {
+                    if (p.hp > 0) {
+                        let healAmount = Math.floor(Math.random() * 16) + 30;
+                        p.hp = Math.min(p.maxHp, p.hp + healAmount);
+                        createPopUpFX(document.getElementById(`char-${p.id}`), `+${healAmount}`, '#ff66cc');
+                    }
+                });
+            }
+
+            updateBattleUI();
+
+            setTimeout(() => {
+                if (currentEnemy.hp > 0) {
+                    processEnemyTurnAI();
+                } else {
+                    nextTurn();
+                }
+            }, 600);
+        }
+
+function mysteryBox(level){
+
+let pool=[];
+
+allCharacters.forEach(c=>{
+    pool.push(JSON.parse(JSON.stringify(c)));
+});
+
+challengerPool.forEach(c=>{
+    pool.push(JSON.parse(JSON.stringify(c)));
+});
+
+if(level===1){
+
+    // Mystery Box chỉ lấy nhân vật đã unlock
+    pool=pool.filter(c=>c.unlocked);
+
+}
+
+    combatParty.forEach((p,i)=>{
+
+        let rand =
+        JSON.parse(JSON.stringify(
+            pool[Math.floor(Math.random()*pool.length)]
+        ));
+
+        combatParty[i].name = rand.name;
+        combatParty[i].moves = rand.moves;
+        combatParty[i].styleClass =
+        rand.styleClass || "unlocked-hero";
+
+        let sprite =
+        document.getElementById("char-"+p.id);
+
+        sprite.className =
+        "sprite "+combatParty[i].styleClass;
+
+        sprite.innerText =
+        combatParty[i].name;
+
+        createPopUpFX(
+            sprite,
+            "MYSTERY!",
+            "#66ccff"
+        );
+
+    });
+
+}
+
+        function processEnemyTurnAI() {
+            let aliveTeam = combatParty.filter(p => p.hp > 0);
+            if (aliveTeam.length === 0) return;
+
+            let randomTarget = aliveTeam[Math.floor(Math.random() * aliveTeam.length)];
+            let attackPower = currentEnemy.type === "boss" ? 30 : (currentEnemy.type === "challenger" ? 25 : 15);
+            let rawDamage = Math.floor(Math.random() * 15) + attackPower;
+
+            // Apply synced damage profile back onto global registry to keep tracking persistent
+            let globalRef = allCharacters.find(c => c.id === randomTarget.id);
+            randomTarget.hp = Math.max(0, randomTarget.hp - rawDamage);
+            if (globalRef) globalRef.hp = randomTarget.hp;
+
+            createPopUpFX(document.getElementById(`char-${randomTarget.id}`), `-${rawDamage}`, '#ff0000');
+            
+            updateBattleUI();
+
+            setTimeout(() => {
+                currentTurnIndex = (currentTurnIndex + 1) % combatParty.length;
+                nextTurn();
+            }, 650);
+        }
+
+        function handleBattleVictory() {
+            if (isChallengerBattleActive) {
+                showEndOverlay("CHALLENGER_WIN");
+            } else {
+                let lockedChallengers = challengerPool.filter(c => !c.unlocked);
+                if (lockedChallengers.length > 0 && Math.random() < 0.35) {
+                    selectedChallengerTemplate = lockedChallengers[Math.floor(Math.random() * lockedChallengers.length)];
+                    showEndOverlay("CHALLENGER_APPEAR");
+                } else {
+                    showEndOverlay("WIN");
+                }
+            }
+        }
+
+        function showEndOverlay(mode) {
+            overlayMode = mode;
+            let overlay = document.getElementById('overlay');
+            let title = document.getElementById('overlay-title');
+            let desc = document.getElementById('overlay-desc');
+            let btn = document.getElementById('overlay-btn');
+            let grid = document.getElementById('party-selection-grid');
+
+            grid.innerHTML = '';
+            overlay.style.display = 'flex';
+
+            if (mode === "PARTY_SETUP") {
+                title.innerText = "PARTY SELECTION";
+                title.style.color = "#55ff55";
+                desc.innerText = "Select between 1 to 3 characters for your team.";
+                btn.innerText = "CONFIRM TEAM";
+                
+                allCharacters.forEach(c => {
+                    if (c.unlocked) {
+                        let node = document.createElement('div');
+                        node.className = `sprite ${c.styleClass || 'unlocked-hero'}`;
+                        node.style.border = activePartyIds.includes(c.id) ? "3px solid #55ff55" : "3px solid #444";
+                        node.style.cursor = "pointer";
+                        node.innerText = c.name;
+                        node.onclick = () => {
+                            if (activePartyIds.includes(c.id)) {
+                                activePartyIds = activePartyIds.filter(id => id !== c.id);
+                            } else {
+                                activePartyIds.push(c.id);
+                            }
+                            showEndOverlay("PARTY_SETUP");
+                        };
+                        grid.appendChild(node);
+                    }
+                });
+            } 
+            else if (mode === "WIN") {
+                title.innerText = "VICTORY!";
+                title.style.color = "#ffcc00";
+                desc.innerText = "You defeated the enemy and earned Faz-Tokens!";
+                btn.innerText = "RETURN TO MAP";
+            } 
+            else if (mode === "GAME_OVER") {
+                title.innerText = "GAME OVER";
+                title.style.color = "#ff3333";
+                desc.innerText = "Your selected team roster was wiped out.";
+                btn.innerText = "TRY AGAIN";
+            } 
+            else if (mode === "CHALLENGER_APPEAR") {
+                title.innerText = "NEW CHALLENGER!";
+                title.style.color = "#2196f3";
+                desc.innerText = `A wild ${selectedChallengerTemplate.name} attacks! Defeat them to unlock them!`;
+                btn.innerText = "ENGAGE BATTLE";
+            } 
+            else if (mode === "CHALLENGER_WIN") {
+                title.innerText = "CHARACTER UNLOCKED!";
+                title.style.color = "#00ff00";
+                desc.innerText = `${selectedChallengerTemplate.name} has joined your roster! Adjust your party setup next!`;
+                btn.innerText = "OPEN TEAM MANAGER";
+            }
+        }
+
+        function handleOverlayClick() {
+            if (overlayMode === "PARTY_SETUP") {
+                if (activePartyIds.length < 1 || activePartyIds.length > 3) {
+                    alert("Your party team size must be between 1 and 3 characters!");
+                    return;
+                }
+                document.getElementById('overlay').style.display = 'none';
+                returnToOverworld();
+            } 
+            else if (overlayMode === "CHALLENGER_APPEAR") {
+                document.getElementById('overlay').style.display = 'none';
+                triggerChallengerBattle();
+            } 
+            else if (overlayMode === "CHALLENGER_WIN") {
+                selectedChallengerTemplate.unlocked = true;
+
+let clone = JSON.parse(JSON.stringify(selectedChallengerTemplate));
+clone.unlocked = true;
+allCharacters.push(clone);
+
+saveUnlockedCharacters();
+
+showEndOverlay("PARTY_SETUP");
+            } 
+            else {
+                document.getElementById('overlay').style.display = 'none';
+                returnToOverworld();
+            }
+        }
+
+        function returnToOverworld() {
+            document.getElementById('battle-screen').style.display = 'none';
+            document.getElementById('map-screen').style.display = 'flex';
+            
+            allCharacters.forEach(p => p.hp = p.maxHp);
+            renderPlayer();
+        }
+
+function openPartyMenu() {
+    showEndOverlay("PARTY_SETUP");
+}
+
+        function createPopUpFX(element, text, color) {
+            if (!element) return;
+            let rect = element.getBoundingClientRect();
+            let containerRect = document.getElementById('game-container').getBoundingClientRect();
+            
+            let pop = document.createElement('div');
+            pop.className = 'pop-text';
+            pop.innerText = text;
+            pop.style.color = color;
+            pop.style.left = (rect.left - containerRect.left + rect.width / 2 - 10) + 'px';
+            pop.style.top = (rect.top - containerRect.top - 10) + 'px';
+            
+            document.getElementById('game-container').appendChild(pop);
+            setTimeout(() => pop.remove(), 500);
+        }
+
+        // Open Party Selection Manager on Game Start Engine Load Sequence
+        showEndOverlay("PARTY_SETUP");
+        initMap();
+    </script>
+</body>
+</html>
